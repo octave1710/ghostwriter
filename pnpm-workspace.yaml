@@ -4,5 +4,6 @@ allowBuilds:
   '@datadog/native-metrics': false
   '@datadog/pprof': false
   dd-trace: false
+  esbuild: true
   sharp: false
   unrs-resolver: false
