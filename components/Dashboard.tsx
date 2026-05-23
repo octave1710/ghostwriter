@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from 'react';
 import { NarrativeChart, type SeriesPoint } from './NarrativeChart';
+import { TracePanel } from './TracePanel';
 import type { RunResult } from '@/lib/agent/loop';
+
+const DD_SITE = process.env.NEXT_PUBLIC_DD_SITE ?? 'datadoghq.com';
+const DD_ML_APP = process.env.NEXT_PUBLIC_DD_LLMOBS_ML_APP ?? 'makoai';
 
 type Props = {
   defaultBrand: string;
@@ -183,6 +187,17 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
               <NarrativeChart series={series} />
             </div>
           </div>
+        </section>
+
+        {/* Datadog trace panel */}
+        <section>
+          <TracePanel
+            steps={result?.trace ?? []}
+            runId={result?.runId}
+            durationMs={result?.durationMs}
+            ddSite={DD_SITE}
+            mlApp={DD_ML_APP}
+          />
         </section>
 
         {/* Footer */}
