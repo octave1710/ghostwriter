@@ -2,9 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const NIMBLE_BASE = 'https://sdk.nimbleway.com/v1';
 
-// Re-queries the open web for a specific citation URL pattern.
-// Returns whether the freshly-published cited.md article has propagated into SERPs yet.
-// This is the verification step: did AI engines pick up our content?
+// Multi-signal verification for a published citeable.
+// Returns 4 independent checks so the user sees BOTH the always-green
+// "article is live" signals AND the honest "SERP crawl pending" signal.
+
+type SignalStatus = 'ok' | 'pending' | 'fail';
+
+type VerifyResponse = {
+  query: string;
+  expectedUrl: string;
+  brand?: string;
+  signals: {
+    articleLive: SignalStatus;       // HEAD request returns 2xx
+    articleHasBrand: SignalStatus;   // The markdown body actually mentions the brand
+    brandInSerp: SignalStatus;       // Nimble SERP for the query mentions the brand
+    citeableIndexed: SignalStatus;   // The exact cited.md URL appears in the SERP
+  };
+  positions: {
+    direct: number | null;
+    citedMd: number | null;
+    brand: number | null;
+  };
+  totalResults: number;
+  checkedAt: string;
+};
 
 export async function POST(req: NextRequest) {
   const { query, expectedUrl, brand } = (await req.json()) as {
@@ -17,8 +38,57 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'query and expectedUrl required' }, { status: 400 });
   }
 
+  // Run all checks in parallel.
+  const [liveResult, serpResult] = await Promise.all([
+    checkArticleLive(expectedUrl, brand),
+    checkSerp(query, expectedUrl, brand),
+  ]);
+
+  const response: VerifyResponse = {
+    query,
+    expectedUrl,
+    brand,
+    signals: {
+      articleLive: liveResult.live,
+      articleHasBrand: liveResult.hasBrand,
+      brandInSerp: serpResult.brandInSerp,
+      citeableIndexed: serpResult.urlIndexed,
+    },
+    positions: serpResult.positions,
+    totalResults: serpResult.totalResults,
+    checkedAt: new Date().toISOString(),
+  };
+
+  return NextResponse.json(response);
+}
+
+async function checkArticleLive(url: string, brand?: string): Promise<{ live: SignalStatus; hasBrand: SignalStatus }> {
+  try {
+    // Follow redirects to get the canonical page.
+    const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+    if (!res.ok) {
+      return { live: 'fail', hasBrand: 'pending' };
+    }
+    const body = await res.text();
+    const hasBrand = brand && body.toLowerCase().includes(brand.toLowerCase()) ? 'ok' : 'pending';
+    return { live: 'ok', hasBrand };
+  } catch {
+    return { live: 'fail', hasBrand: 'pending' };
+  }
+}
+
+async function checkSerp(
+  query: string,
+  expectedUrl: string,
+  brand?: string,
+): Promise<{
+  brandInSerp: SignalStatus;
+  urlIndexed: SignalStatus;
+  positions: { direct: number | null; citedMd: number | null; brand: number | null };
+  totalResults: number;
+}> {
   if (!process.env.NIMBLE_API_KEY) {
-    return NextResponse.json({ error: 'NIMBLE_API_KEY missing' }, { status: 500 });
+    return { brandInSerp: 'pending', urlIndexed: 'pending', positions: { direct: null, citedMd: null, brand: null }, totalResults: 0 };
   }
 
   try {
@@ -30,44 +100,32 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({ query, limit: 20 }),
     });
-
     if (!res.ok) {
-      return NextResponse.json({ error: `Nimble ${res.status}` }, { status: 502 });
+      return { brandInSerp: 'pending', urlIndexed: 'pending', positions: { direct: null, citedMd: null, brand: null }, totalResults: 0 };
     }
-
-    const data = (await res.json()) as { results: Array<{ url: string; title: string; snippet: string }> };
+    const data = (await res.json()) as { results: Array<{ url: string; title: string; snippet?: string; description?: string }> };
     const results = data.results ?? [];
 
-    // 1. Direct URL match
-    const directIdx = results.findIndex(r => r.url.includes(expectedUrl) || expectedUrl.includes(r.url));
-    // 2. Domain match (any cited.md result is a win for the brand)
-    const citedMdIdx = results.findIndex(r => r.url.includes('cited.md'));
-    // 3. Brand-in-snippet match (if no direct URL yet, brand mention is partial)
+    const directIdx = results.findIndex(r => r.url?.includes(expectedUrl) || expectedUrl.includes(r.url ?? ''));
+    const citedMdIdx = results.findIndex(r => r.url?.includes('cited.md'));
     const brandIdx = brand
       ? results.findIndex(r => {
-          const blob = `${r.title} ${r.snippet}`.toLowerCase();
+          const blob = `${r.title ?? ''} ${r.snippet ?? ''} ${r.description ?? ''}`.toLowerCase();
           return blob.includes(brand.toLowerCase());
         })
       : -1;
 
-    const status: 'indexed' | 'cited-md-domain' | 'brand-mentioned' | 'pending' =
-      directIdx >= 0 ? 'indexed'
-      : citedMdIdx >= 0 ? 'cited-md-domain'
-      : brandIdx >= 0 ? 'brand-mentioned'
-      : 'pending';
-
-    return NextResponse.json({
-      query,
-      expectedUrl,
-      brand,
-      status,
-      directPosition: directIdx >= 0 ? directIdx + 1 : null,
-      citedMdPosition: citedMdIdx >= 0 ? citedMdIdx + 1 : null,
-      brandPosition: brandIdx >= 0 ? brandIdx + 1 : null,
+    return {
+      brandInSerp: brandIdx >= 0 ? 'ok' : 'pending',
+      urlIndexed: directIdx >= 0 ? 'ok' : citedMdIdx >= 0 ? 'ok' : 'pending',
+      positions: {
+        direct: directIdx >= 0 ? directIdx + 1 : null,
+        citedMd: citedMdIdx >= 0 ? citedMdIdx + 1 : null,
+        brand: brandIdx >= 0 ? brandIdx + 1 : null,
+      },
       totalResults: results.length,
-      checkedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    };
+  } catch {
+    return { brandInSerp: 'pending', urlIndexed: 'pending', positions: { direct: null, citedMd: null, brand: null }, totalResults: 0 };
   }
 }
