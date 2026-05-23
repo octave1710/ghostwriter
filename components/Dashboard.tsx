@@ -9,6 +9,7 @@ import { X402Panel } from './X402Panel';
 import { MonitoringPanel } from './MonitoringPanel';
 import { CompetitiveLeaderboard } from './CompetitiveLeaderboard';
 import { OptimizationsPanel } from './OptimizationsPanel';
+import { VerificationPanel } from './VerificationPanel';
 import type { RunResult } from '@/lib/agent/loop';
 
 const DD_SITE = process.env.NEXT_PUBLIC_DD_SITE ?? 'datadoghq.com';
@@ -256,16 +257,24 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
           </div>
         )}
 
-        {result?.aiResponseSimulation && (
+        {result && (
           <SectionHeader
             n="03"
             title="How AI engines now answer"
-            description="Same query, simulated through an AI engine — before vs after your citeable hits the web."
+            description="Coverage: ChatGPT, Perplexity, Gemini, Google AI Overview, Claude.ai. Same query, before vs after your citeable hits the web."
           />
         )}
 
         {result && (
           <AIResponsePanel sim={result.aiResponseSimulation} />
+        )}
+
+        {result && result.published.length > 0 && (
+          <VerificationPanel
+            articles={result.published}
+            brand={brand}
+            queries={result.gaps.map(g => g.query)}
+          />
         )}
 
         {/* ─── REVENUE ─── */}
@@ -332,10 +341,10 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
 function SectionHeader({ n, title, description }: { n: string; title: string; description: string }) {
   return (
     <div className="flex items-baseline gap-4 pt-4">
-      <span className="text-[10px] font-mono text-emerald-400/60 tracking-widest">{n}</span>
-      <div className="flex-1 border-t border-zinc-800 pt-3 -mt-3">
-        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-        <p className="text-sm text-zinc-500 mt-0.5">{description}</p>
+      <span className="text-[10px] font-mono text-blue-400/70 tracking-widest font-semibold">{n}</span>
+      <div className="flex-1 border-t border-blue-500/15 pt-3 -mt-3">
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-50">{title}</h2>
+        <p className="text-sm text-zinc-400 mt-1 leading-relaxed">{description}</p>
       </div>
     </div>
   );
