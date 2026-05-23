@@ -5,6 +5,7 @@ import { NarrativeChart, type SeriesPoint } from './NarrativeChart';
 import { TracePanel } from './TracePanel';
 import { AIResponsePanel } from './AIResponsePanel';
 import { PublishedArticles } from './PublishedArticles';
+import { X402Panel } from './X402Panel';
 import type { RunResult } from '@/lib/agent/loop';
 
 const DD_SITE = process.env.NEXT_PUBLIC_DD_SITE ?? 'datadoghq.com';
@@ -246,6 +247,13 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
           </section>
         )}
 
+        {/* x402 agent payment rail */}
+        {result && result.published.length > 0 && (
+          <section>
+            <X402Panel articles={result.published} />
+          </section>
+        )}
+
         {/* Datadog trace panel */}
         <section>
           <TracePanel
@@ -261,7 +269,7 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
         <footer className="text-xs text-zinc-600 font-mono space-y-1 pt-8 border-t border-zinc-900">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             <span>Sponsors wired:</span>
-            <span className="text-zinc-400">Nimble</span>·<span className="text-zinc-400">Senso</span>·<span className="text-zinc-400">ClickHouse</span>·<span className="text-zinc-400">Datadog</span>·<span className="text-zinc-400">OpenAI</span>
+            <span className="text-zinc-400">Nimble</span>·<span className="text-zinc-400">Senso</span>·<span className="text-zinc-400">ClickHouse</span>·<span className="text-zinc-400">Datadog</span>·<span className="text-zinc-400">OpenAI</span>·<span className="text-zinc-400">x402</span>
           </div>
           <div>
             <a href="/api/health" className="hover:text-zinc-400">/api/health</a> ·{' '}
