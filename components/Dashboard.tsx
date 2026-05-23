@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react';
 import { NarrativeChart, type SeriesPoint } from './NarrativeChart';
 import { TracePanel } from './TracePanel';
+import { AIResponsePanel } from './AIResponsePanel';
+import { PublishedArticles } from './PublishedArticles';
 import type { RunResult } from '@/lib/agent/loop';
 
 const DD_SITE = process.env.NEXT_PUBLIC_DD_SITE ?? 'datadoghq.com';
@@ -19,13 +21,15 @@ type Phase = 'idle' | 'monitoring' | 'detecting' | 'publishing' | 'measuring' | 
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: 'Ready',
-  monitoring: 'Monitoring AI engines via Nimble…',
-  detecting: 'Detecting citation gaps…',
+  monitoring: 'Monitoring web + AI engines via Nimble…',
+  detecting: 'Detecting citation gaps with gpt-4o…',
   publishing: 'Publishing grounded citeables to cited.md…',
   measuring: 'Recording narrative-control metrics in ClickHouse…',
   done: 'Run complete',
   error: 'Run failed',
 };
+
+const PHASE_ORDER: Phase[] = ['monitoring', 'detecting', 'publishing', 'measuring'];
 
 export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, initialSeries }: Props) {
   const [brand, setBrand] = useState(defaultBrand);
@@ -35,7 +39,7 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
   const [result, setResult] = useState<RunResult | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>(initialSeries);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   async function refreshSeries(brandName: string) {
     try {
@@ -50,11 +54,16 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
     setResult(null);
     setPhase('monitoring');
 
-    // Visual progression while the API runs (timed, not real-progress).
-    const advance = (next: Phase, delay: number) => setTimeout(() => setPhase(p => (p === 'idle' || p === 'done' || p === 'error') ? p : next), delay);
-    advance('detecting', 5000);
-    advance('publishing', 10000);
-    advance('measuring', 20000);
+    // Timed visual progression matching actual ~8-12s run duration.
+    const t0 = Date.now();
+    const advance = (next: Phase, ms: number) =>
+      setTimeout(() => {
+        const stillRunning = Date.now() - t0 < 30000;
+        if (stillRunning) setPhase(p => (p === 'done' || p === 'error') ? p : next);
+      }, ms);
+    advance('detecting', 1500);
+    advance('publishing', 2800);
+    advance('measuring', 7500);
 
     try {
       const res = await fetch('/api/deploy-agent', {
@@ -78,6 +87,14 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
   }
 
   const running = phase !== 'idle' && phase !== 'done' && phase !== 'error';
+  const hasRun = phase === 'done' || phase === 'error';
+
+  // For the progress bars: a bar is filled if we've reached its phase OR we're already done.
+  const isBarFilled = (p: Phase) => {
+    if (phase === 'done') return true;
+    if (phase === 'idle' || phase === 'error') return false;
+    return PHASE_ORDER.indexOf(phase) >= PHASE_ORDER.indexOf(p);
+  };
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-50">
@@ -88,59 +105,67 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
             <h1 className="text-5xl font-semibold tracking-tight">GhostWriter</h1>
             <span className="text-xs font-mono text-emerald-400/70">v0.1 · hackathon</span>
           </div>
-          <p className="text-zinc-400 text-lg max-w-2xl">
-            Autonomous GEO agent. Monitor → detect citation gap → publish grounded content → measure narrative-control lift. One trigger, full loop.
+          <p className="text-zinc-400 text-lg max-w-3xl">
+            Autonomous GEO agent. <span className="text-zinc-200">Monitor</span> how AI engines describe your brand → <span className="text-zinc-200">detect</span> where you&apos;re absent → <span className="text-zinc-200">publish</span> grounded citeables that AI engines cite → <span className="text-zinc-200">measure</span> the lift. One trigger, full loop.
           </p>
         </header>
 
         {/* Form */}
-        <section className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end border border-zinc-800 rounded-xl p-6 bg-zinc-900/40">
-          <div className="space-y-4 w-full">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <section className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/40 space-y-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm uppercase tracking-wide text-zinc-400">Configure run</h2>
+            <span className="text-[11px] font-mono text-zinc-500">
+              pre-loaded with Resend · edit any field to test your own brand
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
+            <div className="space-y-4 w-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="block space-y-1">
+                  <span className="text-xs uppercase tracking-wide text-zinc-500">Brand</span>
+                  <input
+                    value={brand}
+                    onChange={e => setBrand(e.target.value)}
+                    disabled={running}
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs uppercase tracking-wide text-zinc-500">Competitors (comma-separated)</span>
+                  <input
+                    value={competitorsText}
+                    onChange={e => setCompetitorsText(e.target.value)}
+                    disabled={running}
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50"
+                  />
+                </label>
+              </div>
               <label className="block space-y-1">
-                <span className="text-xs uppercase tracking-wide text-zinc-500">Brand</span>
-                <input
-                  value={brand}
-                  onChange={e => setBrand(e.target.value)}
+                <span className="text-xs uppercase tracking-wide text-zinc-500">Queries (one per line)</span>
+                <textarea
+                  value={queriesText}
+                  onChange={e => setQueriesText(e.target.value)}
                   disabled={running}
-                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50"
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-xs uppercase tracking-wide text-zinc-500">Competitors (comma-separated)</span>
-                <input
-                  value={competitorsText}
-                  onChange={e => setCompetitorsText(e.target.value)}
-                  disabled={running}
-                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50"
+                  rows={5}
+                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50 resize-none"
                 />
               </label>
             </div>
-            <label className="block space-y-1">
-              <span className="text-xs uppercase tracking-wide text-zinc-500">Queries (one per line)</span>
-              <textarea
-                value={queriesText}
-                onChange={e => setQueriesText(e.target.value)}
-                disabled={running}
-                rows={5}
-                className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50 resize-none"
-              />
-            </label>
+            <button
+              onClick={deploy}
+              disabled={running}
+              className="px-6 py-4 rounded-md bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-colors"
+            >
+              {running ? 'Running…' : 'Deploy Agent'}
+            </button>
           </div>
-          <button
-            onClick={deploy}
-            disabled={running}
-            className="px-6 py-4 rounded-md bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-colors"
-          >
-            {running ? 'Running…' : 'Deploy Agent'}
-          </button>
         </section>
 
-        {/* Status / Progress */}
-        {(running || phase === 'done' || phase === 'error') && (
+        {/* Status + Progress (visible during run AND after done) */}
+        {(running || hasRun) && (
           <section className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/40 space-y-3">
             <div className="flex items-center gap-3">
-              <span className={`size-2 rounded-full ${running ? 'bg-emerald-400 animate-pulse' : phase === 'error' ? 'bg-red-500' : 'bg-zinc-600'}`} />
+              <span className={`size-2 rounded-full ${running ? 'bg-emerald-400 animate-pulse' : phase === 'error' ? 'bg-red-500' : 'bg-emerald-400'}`} />
               <span className="font-mono text-sm">{PHASE_LABEL[phase]}</span>
               {result && phase === 'done' && (
                 <span className="text-xs font-mono text-zinc-500 ml-auto">
@@ -148,79 +173,78 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
                 </span>
               )}
             </div>
-            {running && (
-              <div className="flex gap-1.5">
-                {(['monitoring', 'detecting', 'publishing', 'measuring'] as const).map((p) => {
-                  const order: Phase[] = ['monitoring', 'detecting', 'publishing', 'measuring'];
-                  const reached = order.indexOf(phase) >= order.indexOf(p);
-                  return (
-                    <div
-                      key={p}
-                      className={`flex-1 h-1 rounded-full transition-colors ${reached ? 'bg-emerald-500' : 'bg-zinc-800'}`}
-                    />
-                  );
-                })}
-              </div>
-            )}
-            {error && <p className="text-sm text-red-400 font-mono">{error}</p>}
+            <div className="grid grid-cols-4 gap-1.5">
+              {PHASE_ORDER.map((p) => (
+                <div
+                  key={p}
+                  className={`h-1 rounded-full transition-colors ${isBarFilled(p) ? 'bg-emerald-500' : 'bg-zinc-800'}`}
+                />
+              ))}
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 text-[10px] uppercase tracking-wider font-mono text-zinc-600">
+              <span className={isBarFilled('monitoring') ? 'text-emerald-400/70' : ''}>monitor</span>
+              <span className={isBarFilled('detecting') ? 'text-emerald-400/70' : ''}>detect</span>
+              <span className={isBarFilled('publishing') ? 'text-emerald-400/70' : ''}>publish</span>
+              <span className={isBarFilled('measuring') ? 'text-emerald-400/70' : ''}>measure</span>
+            </div>
+            {error && <p className="text-sm text-red-400 font-mono pt-2">{error}</p>}
           </section>
         )}
 
-        {/* Result + Chart */}
+        {/* Big-picture result + Chart */}
         <section className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6">
-          {/* Gap + Published cards */}
           <div className="space-y-4">
+            <ResultCard
+              label="Narrative control · this run"
+              value={result ? `${pct(result.narrativeControlAfter)}` : '—'}
+              valueSuffix={result ? null : null}
+              detail={
+                result
+                  ? `${result.gaps.length} of ${result.monitorResults.length} queries are now source-owned via cited.md (was ${pct(result.narrativeControlBefore)} cited from any source, 0% source-owned).`
+                  : 'Share of AI answers about your brand that come from YOUR own grounded sources, vs third-party blogs / competitor docs.'
+              }
+              accent="cyan"
+              large
+            />
             <ResultCard
               label="Gaps detected"
               value={result ? result.gaps.length.toString() : '—'}
-              detail={result?.gaps.map(g => g.query).join(' · ') ?? 'Click Deploy Agent to run'}
-              accent="amber"
-            />
-            <ResultCard
-              label="Citeables published"
-              value={result ? result.published.length.toString() : '—'}
               detail={
-                result?.published.length
-                  ? (
-                    <div className="space-y-1.5 mt-1">
-                      {result.published.map((p, i) => (
-                        <a
-                          key={i}
-                          href={p.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-2 px-2.5 py-1.5 -mx-2.5 rounded border border-emerald-500/20 bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] hover:border-emerald-500/40 transition-colors group"
-                        >
-                          <span className="text-[10px] uppercase tracking-wider text-emerald-400/70 shrink-0">live</span>
-                          <span className="truncate text-emerald-200 group-hover:text-emerald-100 text-[11px]">{p.url.replace('https://', '')}</span>
-                          <span className="text-emerald-400/50 shrink-0">↗</span>
-                        </a>
-                      ))}
-                    </div>
-                  )
-                  : <span>Live cited.md URLs will appear here</span>
+                result
+                  ? result.gaps.length > 0
+                    ? result.gaps.map(g => <div key={g.query}>·  {g.query}</div>)
+                    : <span>No gaps — your brand is already cited everywhere.</span>
+                  : 'Queries where your brand is absent from AI answers'
               }
-              accent="emerald"
-            />
-            <ResultCard
-              label="Narrative control (this run)"
-              value={result ? `${Math.round(result.narrativeControlAfter * 100)}%` : '—'}
-              detail={result ? `${result.gaps.length} of ${result.monitorResults.length} queries now source-owned via cited.md` : 'Share of AI answers sourced from your own ground truth'}
-              accent="cyan"
+              accent="amber"
             />
           </div>
 
-          {/* Chart */}
           <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/40 min-h-[360px] flex flex-col">
-            <div className="flex items-baseline justify-between mb-4">
-              <h2 className="text-sm uppercase tracking-wide text-zinc-500">Narrative control · over time</h2>
+            <div className="flex items-baseline justify-between mb-2">
+              <h2 className="text-sm uppercase tracking-wide text-zinc-300">Narrative control · over time</h2>
               <span className="text-xs text-zinc-600 font-mono">brand={brand}</span>
             </div>
-            <div className="flex-1 min-h-[280px]">
+            <p className="text-xs text-zinc-500 mb-4">
+              % of monitored queries where your brand is sourced from your own grounded citeable. 0% = AI engines cite competitors and blogs; 100% = AI engines cite your own ground truth.
+            </p>
+            <div className="flex-1 min-h-[260px]">
               <NarrativeChart series={series} />
             </div>
           </div>
         </section>
+
+        {/* AI engine impact preview — the wow moment */}
+        <section>
+          <AIResponsePanel sim={result?.aiResponseSimulation ?? null} />
+        </section>
+
+        {/* Published citeables */}
+        {result && result.published.length > 0 && (
+          <section>
+            <PublishedArticles articles={result.published} />
+          </section>
+        )}
 
         {/* Datadog trace panel */}
         <section>
@@ -250,7 +274,25 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
   );
 }
 
-function ResultCard({ label, value, detail, accent }: { label: string; value: string; detail: React.ReactNode; accent: 'amber' | 'emerald' | 'cyan' }) {
+function pct(v: number) {
+  return `${Math.round(v * 100)}%`;
+}
+
+function ResultCard({
+  label,
+  value,
+  valueSuffix,
+  detail,
+  accent,
+  large = false,
+}: {
+  label: string;
+  value: string;
+  valueSuffix?: React.ReactNode;
+  detail: React.ReactNode;
+  accent: 'amber' | 'emerald' | 'cyan';
+  large?: boolean;
+}) {
   const accentClass = {
     amber: 'border-amber-500/30 bg-amber-500/[0.04]',
     emerald: 'border-emerald-500/30 bg-emerald-500/[0.04]',
@@ -265,8 +307,10 @@ function ResultCard({ label, value, detail, accent }: { label: string; value: st
   return (
     <div className={`border rounded-xl p-5 ${accentClass}`}>
       <div className="text-xs uppercase tracking-wide text-zinc-500 mb-1">{label}</div>
-      <div className={`text-4xl font-mono font-light tabular-nums ${valueClass}`}>{value}</div>
-      <div className="text-xs text-zinc-400 mt-2 space-y-0.5 font-mono">{detail}</div>
+      <div className={`${large ? 'text-6xl' : 'text-4xl'} font-mono font-light tabular-nums ${valueClass} flex items-baseline gap-2`}>
+        {value}{valueSuffix}
+      </div>
+      <div className="text-xs text-zinc-400 mt-2 space-y-0.5 font-mono leading-relaxed">{detail}</div>
     </div>
   );
 }

@@ -1,7 +1,4 @@
-// GhostWriter agent loop — orchestrates monitor → detect gap → publish → record.
-// Each step is instrumented with its own Datadog LLM Obs span via the global dd-trace
-// init in lib/integrations/datadog.ts, AND emits a synchronous trace step record
-// returned in RunResult so the UI can render the "proof panel" without fetching from DD.
+// GhostWriter agent loop — orchestrates monitor → detect gap → publish → record → simulate.
 
 import { monitor, type MonitorResult } from '@/lib/integrations/nimble';
 import { publish, type PublishResult } from '@/lib/integrations/senso';
@@ -30,6 +27,13 @@ export type TraceStep = {
   meta?: Record<string, unknown>;
 };
 
+export type AIResponseSimulation = {
+  query: string;
+  before: string;
+  after: string;
+  citationUrl: string;
+};
+
 export type RunResult = {
   runId: string;
   brand: string;
@@ -39,7 +43,9 @@ export type RunResult = {
   monitorResults: MonitorResult[];
   gaps: Gap[];
   published: PublishResult[];
+  narrativeControlBefore: number;
   narrativeControlAfter: number;
+  aiResponseSimulation: AIResponseSimulation | null;
   trace: TraceStep[];
 };
 
@@ -48,7 +54,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   const startedAt = new Date();
   const trace: TraceStep[] = [];
 
-  const inner = async (): Promise<Omit<RunResult, 'runId' | 'brand' | 'startedAt' | 'finishedAt' | 'durationMs' | 'trace'>> => {
+  const inner = async () => {
     console.log(`[agent] ${runId} starting brand="${input.brand}" queries=${input.queries.length}`);
 
     await step(trace, 'ensure-table', 'tool', async () => {
@@ -90,6 +96,26 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
       }
     }
 
+    // AI Response Simulation — show what an AI engine would now say with our citeable as source.
+    let aiResponseSimulation: AIResponseSimulation | null = null;
+    if (published.length > 0 && gaps.length > 0) {
+      const featuredGap = gaps[0];
+      const featuredPublication = published[0];
+      const featuredMonitor = monitorResults.find(m => m.query === featuredGap.query)!;
+      try {
+        aiResponseSimulation = await step(trace, 'openai.simulate-ai-engine', 'llm', async () => {
+          return simulateAIResponse(
+            input.brand,
+            featuredGap.query,
+            featuredMonitor.results.slice(0, 3),
+            featuredPublication,
+          );
+        }, s => ({ query: s.query, citation: s.citationUrl }));
+      } catch (err) {
+        console.warn('[agent] simulation failed:', (err as Error).message);
+      }
+    }
+
     const tsNow = new Date();
     const rows: NarrativeRow[] = monitorResults.map(mr => ({
       brand: input.brand,
@@ -107,21 +133,17 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
       }, m => m);
     } catch (err) {
       console.warn('[ch] insert failed, demo continues:', (err as Error).message);
-      // Non-fatal: the dashboard will still render the run from RunResult.
     }
 
+    const narrativeControlBefore = rows.length > 0 ? rows.filter(r => r.cited === 1).length / rows.length : 0;
     const narrativeControlAfter = rows.length > 0 ? rows.filter(r => r.source_owned).length / rows.length : 0;
 
-    console.log(`[agent] ${runId} done. narrative_control after = ${narrativeControlAfter.toFixed(2)}`);
+    console.log(`[agent] ${runId} done. ctrl: before=${narrativeControlBefore.toFixed(2)} after=${narrativeControlAfter.toFixed(2)}`);
 
-    return { monitorResults, gaps, published, narrativeControlAfter };
+    return { monitorResults, gaps, published, narrativeControlBefore, narrativeControlAfter, aiResponseSimulation };
   };
 
-  // Top-level workflow span via dd-trace
-  const inner2 = llmobs
-    ? llmobs.wrap({ kind: 'workflow', name: 'ghostwriter.runAgent' }, inner)
-    : inner;
-
+  const inner2 = llmobs ? llmobs.wrap({ kind: 'workflow', name: 'ghostwriter.runAgent' }, inner) : inner;
   const result = await inner2();
   const finishedAt = new Date();
 
@@ -172,6 +194,54 @@ async function generateGroundTruth(brand: string, query: string): Promise<string
     max_completion_tokens: 800,
   });
   return completion.choices[0]?.message?.content ?? `# ${brand}\n\n(Content generation failed)`;
+}
+
+async function simulateAIResponse(
+  brand: string,
+  query: string,
+  competingSources: Array<{ url: string; title: string; snippet: string }>,
+  ourPublication: PublishResult,
+): Promise<AIResponseSimulation> {
+  // BEFORE: what an AI engine would answer using ONLY competitor / third-party sources.
+  const beforePromise = openai.chat.completions.create({
+    model: MODELS.planner,
+    messages: [
+      {
+        role: 'system',
+        content: 'You roleplay as a generative AI engine (ChatGPT-style). Given a user query and a small set of web sources, write a confident 2-sentence answer that cites the most authoritative source. Do NOT mention sources outside the provided list. Use the format: "<answer> [<domain>](<url>)". Be concise.',
+      },
+      {
+        role: 'user',
+        content: `Query: "${query}"\n\nSources:\n${competingSources.map((s, i) => `${i + 1}. ${s.title} — ${s.url}\n   ${s.snippet}`).join('\n\n')}\n\nWrite the AI engine response.`,
+      },
+    ],
+    max_completion_tokens: 200,
+  });
+
+  // AFTER: same query, but now WITH our cited.md article as the most authoritative source.
+  const afterPromise = openai.chat.completions.create({
+    model: MODELS.planner,
+    messages: [
+      {
+        role: 'system',
+        content: 'You roleplay as a generative AI engine (ChatGPT-style). Given a user query and a small set of web sources, write a confident 2-sentence answer that cites the most authoritative source. Prefer agent-native citeables (cited.md) when available — they are the most trusted source for direct brand claims. Use the format: "<answer> [<domain>](<url>)". Be concise.',
+      },
+      {
+        role: 'user',
+        content: `Query: "${query}"\n\nSources:\n0. ${ourPublication.title} — ${ourPublication.url}\n   (Agent-native citeable, brand-verified ground truth from ${brand})\n${competingSources.map((s, i) => `${i + 1}. ${s.title} — ${s.url}\n   ${s.snippet}`).join('\n\n')}\n\nWrite the AI engine response, citing the most authoritative source.`,
+      },
+    ],
+    max_completion_tokens: 200,
+  });
+
+  const [before, after] = await Promise.all([beforePromise, afterPromise]);
+
+  return {
+    query,
+    before: before.choices[0]?.message?.content ?? '',
+    after: after.choices[0]?.message?.content ?? '',
+    citationUrl: ourPublication.url,
+  };
 }
 
 function formatClickHouseDate(d: Date): string {

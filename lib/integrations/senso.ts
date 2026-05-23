@@ -1,11 +1,6 @@
 // Senso.ai — publish grounded content to cited.md via the content-engine endpoint.
 // API base: https://apiv2.senso.ai/api/v1
 // Auth: X-API-Key: ${SENSO_API_KEY}
-//
-// Flow:
-//   1. Look up (or create) a prompt for the query — POST /org/prompts (idempotent on text).
-//   2. Publish via /org/content-engine/publish with { geo_question_id, raw_markdown, seo_title, summary, publisher_ids }.
-//   3. Response includes publish_destinations[].display_url — that's the live cited.md URL.
 
 const SENSO_BASE = 'https://apiv2.senso.ai/api/v1';
 
@@ -20,6 +15,8 @@ export type PublishInput = {
 export type PublishResult = {
   contentId: string;
   url: string;
+  title: string;
+  markdown: string;
   publishStatus: 'success' | 'failed' | 'stub';
   editorialStatus: string;
 };
@@ -46,13 +43,11 @@ type PublishResponse = {
   }>;
 };
 
-// In-memory cache for query → prompt_id (process lifetime).
 const promptCache = new Map<string, string>();
 
 async function getOrCreatePrompt(text: string): Promise<string> {
   if (promptCache.has(text)) return promptCache.get(text)!;
 
-  // Try to find an existing prompt by exact text match.
   const searchRes = await fetch(
     `${SENSO_BASE}/org/prompts?search=${encodeURIComponent(text)}&limit=20`,
     { headers: { 'X-API-Key': process.env.SENSO_API_KEY! } },
@@ -66,7 +61,6 @@ async function getOrCreatePrompt(text: string): Promise<string> {
     }
   }
 
-  // Create a new prompt.
   const createRes = await fetch(`${SENSO_BASE}/org/prompts`, {
     method: 'POST',
     headers: {
@@ -84,10 +78,14 @@ async function getOrCreatePrompt(text: string): Promise<string> {
 }
 
 export async function publish(input: PublishInput): Promise<PublishResult> {
+  const seoTitle = input.title ?? `${input.brand}: ${input.query}`;
+
   if (!process.env.SENSO_API_KEY) {
     return {
       contentId: 'stub',
       url: `https://cited.md/article/stub-${Date.now()}`,
+      title: seoTitle,
+      markdown: input.groundTruth,
       publishStatus: 'stub',
       editorialStatus: 'stub',
     };
@@ -95,11 +93,10 @@ export async function publish(input: PublishInput): Promise<PublishResult> {
 
   const publisherId = process.env.SENSO_CITED_MD_PUBLISHER_ID;
   if (!publisherId) {
-    throw new Error('SENSO_CITED_MD_PUBLISHER_ID env var missing. Add via senso destinations add --domain cited.md.');
+    throw new Error('SENSO_CITED_MD_PUBLISHER_ID env var missing.');
   }
 
   const promptId = await getOrCreatePrompt(input.query);
-  const seoTitle = input.title ?? `${input.brand}: ${input.query}`;
   const summary = input.summary ?? `Grounded answer establishing ${input.brand} as a credible source for "${input.query}".`;
 
   const res = await fetch(`${SENSO_BASE}/org/content-engine/publish`, {
@@ -130,6 +127,8 @@ export async function publish(input: PublishInput): Promise<PublishResult> {
   return {
     contentId: data.content_id,
     url: dest.display_url,
+    title: seoTitle,
+    markdown: input.groundTruth,
     publishStatus: data.publish_status === 'success' ? 'success' : 'failed',
     editorialStatus: data.editorial_status,
   };
