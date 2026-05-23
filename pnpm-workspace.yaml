@@ -1,0 +1,8 @@
+allowBuilds:
+  '@datadog/native-appsec': false
+  '@datadog/native-iast-taint-tracking': false
+  '@datadog/native-metrics': false
+  '@datadog/pprof': false
+  dd-trace: false
+  sharp: false
+  unrs-resolver: false
