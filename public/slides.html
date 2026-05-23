@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GhostWriter — the autonomous GEO agent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css" id="theme" />
+
+  <style>
+    :root {
+      --emerald: #34d399;
+      --emerald-soft: rgba(52, 211, 153, 0.12);
+      --blue: #60a5fa;
+      --violet: #c084fc;
+      --cyan: #22d3ee;
+      --amber: #fbbf24;
+      --zinc-50: #fafafa;
+      --zinc-200: #e4e4e7;
+      --zinc-300: #d4d4d8;
+      --zinc-400: #a1a1aa;
+      --zinc-500: #71717a;
+      --zinc-700: #3f3f46;
+      --zinc-800: #27272a;
+      --zinc-900: #18181b;
+      --zinc-950: #09090b;
+    }
+
+    .reveal {
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Geist", system-ui, sans-serif;
+      color: var(--zinc-200);
+      background: var(--zinc-950);
+    }
+    .reveal-viewport { background: var(--zinc-950); }
+    .reveal .slides section {
+      text-align: left;
+      padding: 0 4rem;
+    }
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+      font-family: inherit;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      text-transform: none;
+      color: var(--zinc-50);
+    }
+    .reveal .mono { font-family: ui-monospace, "Geist Mono", monospace; }
+
+    /* gradient brand mark */
+    .gw-gradient {
+      background: linear-gradient(100deg, #f4f4f5 0%, #a7f3d0 25%, #34d399 50%, #f4f4f5 75%, #34d399 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: gw-shimmer 6s linear infinite;
+    }
+    @keyframes gw-shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
+
+    .kicker {
+      font-family: ui-monospace, "Geist Mono", monospace;
+      font-size: 0.65em;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--emerald);
+      margin-bottom: 0.6em;
+    }
+    .sub {
+      color: var(--zinc-400);
+      font-size: 0.55em;
+      font-weight: 400;
+      max-width: 80%;
+      line-height: 1.5;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4em;
+      padding: 0.2em 0.7em;
+      border-radius: 999px;
+      border: 1px solid rgba(52, 211, 153, 0.4);
+      background: rgba(52, 211, 153, 0.08);
+      color: var(--emerald);
+      font-family: ui-monospace, monospace;
+      font-size: 0.4em;
+    }
+    .pill-dot {
+      display: inline-block;
+      width: 0.5em;
+      height: 0.5em;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    .big-stat {
+      font-family: ui-monospace, "Geist Mono", monospace;
+      font-size: 4em;
+      font-weight: 300;
+      color: var(--emerald);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-label {
+      font-family: ui-monospace, monospace;
+      font-size: 0.55em;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--zinc-400);
+      margin-top: 0.4em;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3rem;
+      margin-top: 1.5em;
+    }
+    .stat-card {
+      padding: 1.2em 1em;
+      border: 1px solid var(--zinc-800);
+      border-radius: 14px;
+      background: rgba(24, 24, 27, 0.5);
+    }
+
+    .vs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-top: 1em;
+    }
+    .vs-card {
+      padding: 1.5em 1.3em;
+      border: 1px solid var(--zinc-800);
+      border-radius: 14px;
+      background: rgba(24, 24, 27, 0.5);
+    }
+    .vs-card.bad { border-color: rgba(244, 63, 94, 0.3); }
+    .vs-card.good { border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.05); }
+    .vs-card h3 { font-size: 1.1em; margin-bottom: 0.6em; }
+    .vs-card.bad h3 { color: #fda4af; }
+    .vs-card.good h3 { color: var(--emerald); }
+    .vs-card ul { list-style: none; margin: 0; padding: 0; font-size: 0.7em; }
+    .vs-card li { padding: 0.3em 0; color: var(--zinc-300); line-height: 1.5; }
+    .vs-card.bad li::before { content: "—"; margin-right: 0.5em; color: #fda4af; }
+    .vs-card.good li::before { content: "→"; margin-right: 0.5em; color: var(--emerald); }
+
+    .sponsor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.2rem;
+      margin-top: 1em;
+    }
+    .sponsor-card {
+      padding: 1em 1.2em;
+      border: 1px solid var(--zinc-800);
+      border-radius: 12px;
+      background: rgba(24, 24, 27, 0.5);
+    }
+    .sponsor-card .verb {
+      font-family: ui-monospace, monospace;
+      font-size: 0.5em;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--emerald);
+      margin-bottom: 0.3em;
+    }
+    .sponsor-card .name {
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--zinc-50);
+      margin-bottom: 0.3em;
+    }
+    .sponsor-card .desc {
+      font-size: 0.55em;
+      color: var(--zinc-400);
+      line-height: 1.5;
+    }
+
+    .footer-bar {
+      position: fixed;
+      bottom: 1rem;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-family: ui-monospace, monospace;
+      font-size: 0.7rem;
+      color: var(--zinc-600);
+      pointer-events: none;
+      z-index: 999;
+    }
+    .footer-bar a { color: var(--emerald); text-decoration: none; pointer-events: auto; }
+
+    /* reveal overrides */
+    .reveal h1 { font-size: 4em; }
+    .reveal h2 { font-size: 2.4em; }
+    .reveal h3 { font-size: 1.4em; }
+    .reveal p { font-size: 1em; line-height: 1.5; }
+    .reveal .controls { color: var(--emerald); }
+    .reveal .progress { color: var(--emerald); }
+    .reveal a { color: var(--emerald); text-decoration: none; border-bottom: 1px solid rgba(52,211,153,0.3); }
+
+    /* slide-specific */
+    .center-stage {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+    }
+
+    .source {
+      font-family: ui-monospace, monospace;
+      font-size: 0.45em;
+      color: var(--zinc-500);
+      margin-top: 0.8em;
+    }
+    .source::before { content: "source: "; color: var(--zinc-600); }
+
+    .demo-callout {
+      margin-top: 2em;
+      padding: 1.5em 1.8em;
+      border: 1px solid var(--emerald);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(52, 211, 153, 0.12), rgba(52, 211, 153, 0.03));
+    }
+    .demo-callout h3 {
+      color: var(--emerald);
+      font-size: 1.4em;
+      margin: 0;
+    }
+    .demo-callout p {
+      color: var(--zinc-300);
+      font-size: 0.7em;
+      margin-top: 0.5em;
+    }
+    .demo-callout .url {
+      font-family: ui-monospace, monospace;
+      color: var(--emerald);
+      font-size: 0.55em;
+      margin-top: 0.6em;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- 1. TITLE -->
+      <section data-background-gradient="radial-gradient(circle at 30% 20%, rgba(52,211,153,0.12), transparent 60%), #09090b">
+        <div class="center-stage">
+          <div class="pill" style="margin-bottom: 2rem;">
+            <span class="pill-dot"></span>
+            live · agentic engineering hack · NYC
+          </div>
+          <h1 class="gw-gradient" style="font-size: 6em; margin-bottom: 0.3em;">GhostWriter</h1>
+          <p style="font-size: 1.3em; color: var(--zinc-300); font-weight: 300; max-width: 70%;">
+            The first <span style="color: var(--emerald);">autonomous GEO agent</span> that actually closes the loop.
+          </p>
+          <p style="font-size: 0.7em; color: var(--zinc-500); margin-top: 2em;">
+            Monitor AI search · detect citation gaps · publish grounded citeables · measure the lift · monetize via agent payments.
+          </p>
+        </div>
+      </section>
+
+      <!-- 2. THE SHIFT -->
+      <section>
+        <div class="center-stage">
+          <div class="kicker">01 · the shift</div>
+          <h2>AI is the new search.</h2>
+          <p class="sub" style="margin-bottom: 2em;">
+            ChatGPT, Perplexity, Gemini, Claude, Google AI Overviews — they decide who gets cited when users ask for products. And brand discovery is moving faster than any team can react.
+          </p>
+
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="big-stat">700M+</div>
+              <div class="stat-label">weekly ChatGPT users</div>
+              <div class="source">OpenAI, Aug 2025</div>
+            </div>
+            <div class="stat-card">
+              <div class="big-stat">25%</div>
+              <div class="stat-label">search shift to AI by 2026</div>
+              <div class="source">Gartner, 2024 forecast</div>
+            </div>
+            <div class="stat-card">
+              <div class="big-stat">~50%</div>
+              <div class="stat-label">consumers use AI for product research</div>
+              <div class="source">Adobe Digital Trends 2025</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. THE PROBLEM -->
+      <section data-background-gradient="radial-gradient(circle at 70% 30%, rgba(244,63,94,0.08), transparent 60%), #09090b">
+        <div class="center-stage">
+          <div class="kicker" style="color: #fda4af;">02 · the problem</div>
+          <h2>You don't control what AI says about you.</h2>
+          <p class="sub" style="max-width: 75%;">
+            AI engines synthesize from third-party blogs, forums, competitor pages. Your brand is misquoted, out-cited, or just absent. And until now, you couldn't do anything direct about it.
+          </p>
+
+          <div class="vs-grid" style="margin-top: 2.5em;">
+            <div class="vs-card bad">
+              <h3>What GEO tools do today</h3>
+              <ul>
+                <li>Monitor how AI engines describe your brand</li>
+                <li>Recommend you write a blog post</li>
+                <li>Wait weeks. Indirect. Unmeasurable.</li>
+                <li>You're back where you started.</li>
+              </ul>
+            </div>
+            <div class="vs-card good">
+              <h3>What GhostWriter does</h3>
+              <ul>
+                <li>Monitor — same as above</li>
+                <li><span style="color: var(--emerald); font-weight: 600;">Acts</span> — auto-publishes grounded citeables AI cites</li>
+                <li>Measures the narrative-control lift</li>
+                <li>Monetizes via agent payments</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. THE SOLUTION -->
+      <section>
+        <div class="center-stage">
+          <div class="kicker">03 · the solution</div>
+          <h2>One trigger. Full loop. Fully autonomous.</h2>
+          <p class="sub" style="margin-bottom: 2.5em;">
+            GhostWriter is a single-trigger agent that monitors, detects, publishes, measures, expands, verifies, and monetizes — without human intervention.
+          </p>
+
+          <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.8rem; margin-top: 1em;">
+            <div class="stat-card" style="text-align: center; padding: 0.8em 0.6em;">
+              <div style="font-family: ui-monospace, monospace; color: var(--blue); font-size: 0.65em; letter-spacing: 0.2em; text-transform: uppercase;">monitor</div>
+              <div style="font-size: 0.55em; color: var(--zinc-300); margin-top: 0.4em; line-height: 1.4;">Nimble · open web + AI SERPs</div>
+            </div>
+            <div class="stat-card" style="text-align: center; padding: 0.8em 0.6em;">
+              <div style="font-family: ui-monospace, monospace; color: var(--emerald); font-size: 0.65em; letter-spacing: 0.2em; text-transform: uppercase;">act</div>
+              <div style="font-size: 0.55em; color: var(--zinc-300); margin-top: 0.4em; line-height: 1.4;">Senso · publish to cited.md</div>
+            </div>
+            <div class="stat-card" style="text-align: center; padding: 0.8em 0.6em;">
+              <div style="font-family: ui-monospace, monospace; color: var(--violet); font-size: 0.65em; letter-spacing: 0.2em; text-transform: uppercase;">expand</div>
+              <div style="font-size: 0.55em; color: var(--zinc-300); margin-top: 0.4em; line-height: 1.4;">OpenAI · new queries</div>
+            </div>
+            <div class="stat-card" style="text-align: center; padding: 0.8em 0.6em;">
+              <div style="font-family: ui-monospace, monospace; color: var(--cyan); font-size: 0.65em; letter-spacing: 0.2em; text-transform: uppercase;">measure</div>
+              <div style="font-size: 0.55em; color: var(--zinc-300); margin-top: 0.4em; line-height: 1.4;">ClickHouse · time series</div>
+            </div>
+            <div class="stat-card" style="text-align: center; padding: 0.8em 0.6em;">
+              <div style="font-family: ui-monospace, monospace; color: var(--amber); font-size: 0.65em; letter-spacing: 0.2em; text-transform: uppercase;">earn</div>
+              <div style="font-size: 0.55em; color: var(--zinc-300); margin-top: 0.4em; line-height: 1.4;">x402 · USDC paywall</div>
+            </div>
+          </div>
+
+          <p style="text-align: center; color: var(--zinc-500); font-family: ui-monospace, monospace; font-size: 0.55em; margin-top: 2em; letter-spacing: 0.15em;">
+            traced by <span style="color: var(--zinc-300);">Datadog LLM Obs</span> · every step
+          </p>
+        </div>
+      </section>
+
+      <!-- 5. ARCHITECTURE -->
+      <section>
+        <div class="center-stage">
+          <div class="kicker">04 · architecture</div>
+          <h2>Six sponsor tools. One agent loop.</h2>
+          <p class="sub" style="margin-bottom: 1.5em;">
+            Every integration is its own swappable module. The orchestration lives in a single file. Datadog traces every span end-to-end.
+          </p>
+
+          <div class="sponsor-grid">
+            <div class="sponsor-card" style="border-color: rgba(96, 165, 250, 0.3); background: rgba(96, 165, 250, 0.04);">
+              <div class="verb" style="color: var(--blue);">monitor</div>
+              <div class="name">Nimble</div>
+              <div class="desc">Live SERP from the same indexes AI engines train on</div>
+            </div>
+            <div class="sponsor-card" style="border-color: rgba(52, 211, 153, 0.3); background: rgba(52, 211, 153, 0.04);">
+              <div class="verb">publish</div>
+              <div class="name">Senso.ai</div>
+              <div class="desc">Grounded citeable publishing to cited.md</div>
+            </div>
+            <div class="sponsor-card" style="border-color: rgba(34, 211, 238, 0.3); background: rgba(34, 211, 238, 0.04);">
+              <div class="verb" style="color: var(--cyan);">measure</div>
+              <div class="name">ClickHouse</div>
+              <div class="desc">Narrative-control time series at scale</div>
+            </div>
+            <div class="sponsor-card" style="border-color: rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.04);">
+              <div class="verb" style="color: var(--violet);">observe</div>
+              <div class="name">Datadog</div>
+              <div class="desc">LLM Observability for every span and token</div>
+            </div>
+            <div class="sponsor-card" style="border-color: rgba(251, 191, 36, 0.3); background: rgba(251, 191, 36, 0.04);">
+              <div class="verb" style="color: var(--amber);">reason</div>
+              <div class="name">OpenAI</div>
+              <div class="desc">gpt-4o for ground truth + query expansion</div>
+            </div>
+            <div class="sponsor-card" style="border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.05);">
+              <div class="verb" style="color: var(--cyan);">transact</div>
+              <div class="name">x402</div>
+              <div class="desc">HTTP-native USDC payments on Base Sepolia</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. BUSINESS MODEL -->
+      <section data-background-gradient="radial-gradient(circle at 80% 80%, rgba(34,211,238,0.1), transparent 60%), #09090b">
+        <div class="center-stage">
+          <div class="kicker" style="color: var(--cyan);">05 · business model</div>
+          <h2>You don't just fix it. You earn from it.</h2>
+          <p class="sub" style="margin-bottom: 2em;">
+            Every grounded citeable is paywalled via x402. Every time another AI agent reads it, USDC lands in YOUR wallet — a new revenue stream and a credibility signal back to AI engines.
+          </p>
+
+          <div class="stat-grid">
+            <div class="stat-card" style="border-color: rgba(34, 211, 238, 0.3);">
+              <div class="big-stat" style="color: var(--cyan); font-size: 3em;">$0.01</div>
+              <div class="stat-label">per agent read · USDC · base-sepolia</div>
+            </div>
+            <div class="stat-card" style="border-color: rgba(34, 211, 238, 0.3);">
+              <div class="big-stat" style="color: var(--cyan); font-size: 3em;">$300<span style="font-size: 0.4em; color: var(--zinc-500);">/mo</span></div>
+              <div class="stat-label">at 1k reads/day · 1 citeable</div>
+            </div>
+            <div class="stat-card" style="border-color: rgba(34, 211, 238, 0.3);">
+              <div class="big-stat" style="color: var(--cyan); font-size: 3em;">∞</div>
+              <div class="stat-label">compounds with each new citeable</div>
+            </div>
+          </div>
+
+          <p style="font-size: 0.65em; color: var(--zinc-400); margin-top: 2em; max-width: 80%;">
+            Real HTTP 402 protocol. Real USDC settlement. Real agent-readable. Built on the open x402 standard — interoperable with every agent that ships with x402-axios or x402-fetch.
+          </p>
+        </div>
+      </section>
+
+      <!-- 7. WHY NOW -->
+      <section>
+        <div class="center-stage">
+          <div class="kicker">06 · why now</div>
+          <h2>The window is open.</h2>
+
+          <div class="vs-grid" style="margin-top: 2em;">
+            <div class="vs-card good" style="border-color: rgba(52, 211, 153, 0.3);">
+              <h3 style="color: var(--emerald);">For brands</h3>
+              <ul style="font-size: 0.7em;">
+                <li>AI search ate ~25% of search and growing fast</li>
+                <li>SEO playbooks don't transfer — different signal</li>
+                <li>First-movers own the citeable layer</li>
+              </ul>
+            </div>
+            <div class="vs-card good" style="border-color: rgba(34, 211, 238, 0.3); background: rgba(34, 211, 238, 0.04);">
+              <h3 style="color: var(--cyan);">For the agentic economy</h3>
+              <ul style="font-size: 0.7em;">
+                <li>Agents need verified ground truth, not scraped blogs</li>
+                <li>x402 turns reads into a real market</li>
+                <li>cited.md is the substrate; GhostWriter is the publisher</li>
+              </ul>
+            </div>
+          </div>
+
+          <p style="font-size: 0.6em; color: var(--zinc-400); margin-top: 2.5em; text-align: center;">
+            Six sponsor tools. One autonomous loop. Built in &lt;5 hours.
+          </p>
+        </div>
+      </section>
+
+      <!-- 8. LIVE DEMO -->
+      <section data-background-gradient="radial-gradient(circle at 50% 50%, rgba(52,211,153,0.18), transparent 60%), #09090b">
+        <div class="center-stage" style="align-items: center; justify-content: center; text-align: center;">
+          <div class="kicker" style="text-align: center;">live demo</div>
+          <h1 class="gw-gradient" style="font-size: 4.5em; text-align: center; margin-bottom: 0.6em;">
+            Let's run it.
+          </h1>
+
+          <div class="demo-callout">
+            <h3>ghostwriter-taupe-omega.vercel.app</h3>
+            <p>One click. One trigger. Full autonomous loop. 8 seconds end-to-end.</p>
+            <span class="url">github.com/octave1710/ghostwriter</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="footer-bar">
+    GhostWriter · <a href="https://ghostwriter-taupe-omega.vercel.app" target="_blank">live demo ↗</a> · <a href="https://github.com/octave1710/ghostwriter" target="_blank">source ↗</a>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      transition: 'slide',
+      transitionSpeed: 'default',
+      backgroundTransition: 'fade',
+      controls: true,
+      progress: true,
+      slideNumber: 'c/t',
+      keyboard: true,
+      touch: true,
+      width: 1280,
+      height: 800,
+      margin: 0.06,
+      minScale: 0.2,
+      maxScale: 2.0,
+    });
+  </script>
+</body>
+</html>
