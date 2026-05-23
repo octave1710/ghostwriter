@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { NarrativeChart, type SeriesPoint } from './NarrativeChart';
 import { TracePanel } from './TracePanel';
 import { AIResponsePanel } from './AIResponsePanel';
@@ -54,6 +54,12 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
       if (Array.isArray(data.series)) setSeries(data.series);
     } catch { /* swallow */ }
   }
+
+  // Hydrate the chart from ClickHouse on first mount (kept off SSR for snappy first paint).
+  useEffect(() => {
+    if (series.length === 0) refreshSeries(defaultBrand);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function deploy() {
     setError(null);

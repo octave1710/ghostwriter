@@ -1,7 +1,4 @@
 import { Dashboard } from '@/components/Dashboard';
-import { getNarrativeControl } from '@/lib/integrations/clickhouse';
-
-export const dynamic = 'force-dynamic';
 
 const DEFAULT_BRAND = 'Resend';
 const DEFAULT_QUERIES = [
@@ -13,20 +10,15 @@ const DEFAULT_QUERIES = [
 ];
 const DEFAULT_COMPETITORS = ['SendGrid', 'Postmark'];
 
-export default async function Home() {
-  let initialSeries: Array<{ run_id: string; owned_ratio: number; ts: string }> = [];
-  try {
-    initialSeries = await getNarrativeControl(DEFAULT_BRAND);
-  } catch {
-    // graceful fallback if ClickHouse is down
-  }
-
+// Static shell — the chart hydrates client-side from /api/narrative-control to keep
+// first paint <500ms even when ClickHouse cold-starts.
+export default function Home() {
   return (
     <Dashboard
       defaultBrand={DEFAULT_BRAND}
       defaultQueries={DEFAULT_QUERIES}
       defaultCompetitors={DEFAULT_COMPETITORS}
-      initialSeries={initialSeries}
+      initialSeries={[]}
     />
   );
 }
