@@ -1,6 +1,6 @@
 'use client';
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart } from 'recharts';
 
 export type SeriesPoint = {
   run_id: string;
@@ -18,18 +18,30 @@ export function NarrativeChart({ series }: { series: SeriesPoint[] }) {
     );
   }
 
-  // Convert to chart-friendly shape; mark the most recent run as the "after" point.
-  const data = series.map((p, idx) => ({
-    label: p.run_id.startsWith('before-') ? `T-${series.length - idx}` : 'NOW',
-    ratio: Math.round((p.owned_ratio ?? 0) * 100),
-    isLive: !p.run_id.startsWith('before-'),
-  }));
+  const now = Date.now();
+
+  const data = series.map((p) => {
+    const isLive = !p.run_id.startsWith('before-');
+    const ts = new Date(p.ts.replace(' ', 'T') + 'Z').getTime();
+    const daysAgo = Math.max(0, Math.round((now - ts) / (1000 * 60 * 60 * 24)));
+    return {
+      label: isLive ? 'now' : daysAgo === 0 ? 'today' : `${daysAgo}d ago`,
+      ratio: Math.round((p.owned_ratio ?? 0) * 100),
+      isLive,
+    };
+  });
 
   const liveStart = data.findIndex(d => d.isLive);
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
+      <ComposedChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
+        <defs>
+          <linearGradient id="ratioFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgb(52 211 153)" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="rgb(52 211 153)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
         <CartesianGrid stroke="rgb(39 39 42 / 0.6)" strokeDasharray="3 3" />
         <XAxis
           dataKey="label"
@@ -58,8 +70,19 @@ export function NarrativeChart({ series }: { series: SeriesPoint[] }) {
           formatter={(v) => [`${v}%`, 'narrative control']}
         />
         {liveStart > 0 && (
-          <ReferenceLine x={data[liveStart].label} stroke="rgb(52 211 153)" strokeDasharray="2 4" label={{ value: 'agent deployed', position: 'top', fill: 'rgb(52 211 153)', fontSize: 10 }} />
+          <ReferenceLine
+            x={data[liveStart].label}
+            stroke="rgb(52 211 153)"
+            strokeDasharray="2 4"
+            label={{ value: 'agent deployed', position: 'top', fill: 'rgb(52 211 153)', fontSize: 10 }}
+          />
         )}
+        <Area
+          type="monotone"
+          dataKey="ratio"
+          stroke="none"
+          fill="url(#ratioFill)"
+        />
         <Line
           type="monotone"
           dataKey="ratio"
@@ -69,7 +92,7 @@ export function NarrativeChart({ series }: { series: SeriesPoint[] }) {
           activeDot={{ r: 5 }}
           isAnimationActive
         />
-      </LineChart>
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }

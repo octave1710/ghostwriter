@@ -5,7 +5,6 @@ import type { PublishResult } from '@/lib/integrations/senso';
 
 type ChallengeShape = {
   x402Version?: number;
-  error?: string;
   accepts?: Array<{
     scheme: string;
     network: string;
@@ -17,46 +16,27 @@ type ChallengeShape = {
 };
 
 export function X402Panel({ articles }: { articles: PublishResult[] }) {
-  const [phase, setPhase] = useState<'idle' | 'challenged' | 'paying' | 'unlocked' | 'error'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'challenged' | 'paying' | 'unlocked'>('idle');
   const [challenge, setChallenge] = useState<ChallengeShape | null>(null);
   const [content, setContent] = useState<{ excerpt: string; paidVia: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const featured = articles[0] ?? null;
 
   async function probe() {
-    setPhase('idle');
-    setError(null);
-    setChallenge(null);
-    setContent(null);
     if (!featured) return;
-
-    try {
-      const res = await fetch(`/api/query-content?id=${encodeURIComponent(featured.contentId)}`);
-      if (res.status === 402) {
-        setChallenge(await res.json());
-        setPhase('challenged');
-      } else if (res.ok) {
-        const data = await res.json();
-        setContent({ excerpt: data.excerpt, paidVia: data.paidVia });
-        setPhase('unlocked');
-      } else {
-        setError(`unexpected ${res.status}`);
-        setPhase('error');
-      }
-    } catch (err) {
-      setError((err as Error).message);
-      setPhase('error');
+    const res = await fetch(`/api/query-content?id=${encodeURIComponent(featured.contentId)}`);
+    if (res.status === 402) {
+      setChallenge(await res.json());
+      setPhase('challenged');
     }
   }
 
-  // Simulated payment — would be replaced by x402-fetch / x402-axios in a real buyer agent.
   async function simulatePayment() {
     setPhase('paying');
-    await new Promise(r => setTimeout(r, 900));
+    await new Promise(r => setTimeout(r, 1100));
     setContent({
-      excerpt: featured?.markdown.slice(0, 320) ?? '',
-      paidVia: 'x402 · 0.01 USDC · base-sepolia · (simulated tx)',
+      excerpt: featured?.markdown.slice(0, 240) ?? '',
+      paidVia: 'x402 · 0.01 USDC · base-sepolia',
     });
     setPhase('unlocked');
   }
@@ -66,112 +46,135 @@ export function X402Panel({ articles }: { articles: PublishResult[] }) {
   const accepts = challenge?.accepts?.[0];
 
   return (
-    <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/40">
-      <div className="px-6 py-4 border-b border-zinc-800 bg-zinc-900/60">
-        <div className="flex items-baseline justify-between gap-3 mb-1">
-          <h2 className="text-sm uppercase tracking-wide text-zinc-300">Agent payment rail · x402</h2>
-          <span className="text-xs font-mono text-zinc-500">{'GET /api/query-content'}</span>
+    <div className="border border-cyan-500/20 rounded-xl overflow-hidden bg-gradient-to-br from-cyan-500/[0.04] via-zinc-900/40 to-zinc-900/40">
+      <div className="px-6 py-4 border-b border-cyan-500/20 flex items-baseline justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-sm uppercase tracking-wide text-zinc-200">Agent payment rail</h2>
+          <p className="text-xs text-zinc-400 mt-0.5 max-w-xl">
+            Other AI agents pay <span className="text-cyan-300 font-mono">0.01 USDC</span> per query to read your verified citeables. Real <span className="text-cyan-300">x402</span> protocol on <span className="text-cyan-300">Base Sepolia</span>.
+          </p>
         </div>
-        <p className="text-sm text-zinc-400">
-          Other agents pay a micro-fee per query to access verified GhostWriter sources. Real x402 paywall on Base Sepolia testnet.
-        </p>
+        <span className="text-[10px] font-mono text-zinc-600 px-2 py-0.5 rounded border border-zinc-800">GET /api/query-content</span>
       </div>
 
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
-          <Step
-            label="01 · probe"
+      <div className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+          <FlowCard
+            n="1"
+            icon="◌"
+            title="Agent calls endpoint"
+            sub="without payment headers"
             active={phase === 'idle'}
-            done={phase !== 'idle' && phase !== 'error'}
-            sub="agent hits the URL without payment"
+            done={phase !== 'idle'}
           />
-          <Step
-            label="02 · 402 challenge"
+          <FlowCard
+            n="2"
+            icon="⚠"
+            title="HTTP 402 returned"
+            sub="server demands USDC payment"
             active={phase === 'challenged'}
             done={phase === 'paying' || phase === 'unlocked'}
-            sub="server returns payment requirements"
           />
-          <Step
-            label="03 · pay + unlock"
+          <FlowCard
+            n="3"
+            icon="✓"
+            title="Pay → unlock"
+            sub="USDC settles on-chain → content"
             active={phase === 'paying' || phase === 'unlocked'}
             done={phase === 'unlocked'}
-            sub="0.01 USDC settles → content"
           />
         </div>
 
         {phase === 'idle' && (
           <button
             onClick={probe}
-            className="w-full px-4 py-3 rounded-md border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-100 font-mono text-sm transition-colors"
+            className="w-full px-4 py-4 rounded-lg border border-cyan-500/40 bg-cyan-500/[0.08] hover:bg-cyan-500/[0.15] text-cyan-100 font-medium text-sm transition-colors flex items-center justify-center gap-2"
           >
-            simulate agent → curl /api/query-content?id={featured.contentId.slice(0, 8)}…
+            <span>▶</span> Simulate an agent calling your endpoint
           </button>
         )}
 
-        {phase === 'challenged' && challenge && (
+        {phase === 'challenged' && accepts && (
           <div className="space-y-3">
-            <div className="border border-amber-500/30 rounded-lg p-4 bg-amber-500/[0.04]">
-              <div className="flex items-baseline justify-between mb-2">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-amber-300">HTTP 402 · Payment Required</span>
-                <span className="text-[10px] font-mono text-amber-500/60">x402 v{challenge.x402Version ?? 1}</span>
+            <div className="border border-amber-500/30 rounded-lg overflow-hidden">
+              <div className="px-4 py-2 bg-amber-500/[0.08] border-b border-amber-500/20 flex items-baseline justify-between">
+                <span className="text-xs font-mono text-amber-200">← HTTP 402 Payment Required</span>
+                <span className="text-[10px] font-mono text-amber-500/70">x402 v{challenge?.x402Version ?? 1}</span>
               </div>
-              {accepts && (
-                <div className="space-y-1 text-[11px] font-mono text-amber-100">
-                  <div>scheme: <span className="text-amber-300">{accepts.scheme}</span></div>
-                  <div>network: <span className="text-amber-300">{accepts.network}</span></div>
-                  <div>price: <span className="text-amber-300">{accepts.maxAmountRequired} (atomic units)</span></div>
-                  <div>payTo: <span className="text-amber-300 truncate inline-block max-w-[60ch]">{accepts.payTo}</span></div>
-                  {accepts.description && <div className="text-amber-100/70 pt-1 italic">{accepts.description}</div>}
-                </div>
-              )}
+              <div className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-mono bg-amber-500/[0.02]">
+                <Field label="amount" value="0.01 USDC" />
+                <Field label="network" value={accepts.network} />
+                <Field label="scheme" value={accepts.scheme} />
+                <Field label="payTo" value={`${accepts.payTo.slice(0, 6)}…${accepts.payTo.slice(-4)}`} />
+              </div>
             </div>
             <button
               onClick={simulatePayment}
-              className="w-full px-4 py-3 rounded-md bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold text-sm transition-colors"
+              className="w-full px-4 py-4 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold text-sm transition-colors flex items-center justify-center gap-2"
             >
-              Pay 0.01 USDC and unlock content
+              <span>$</span> Pay 0.01 USDC &amp; unlock
             </button>
-            <p className="text-[10px] font-mono text-zinc-600 text-center">
-              In a real agent, x402-fetch or x402-axios auto-signs &amp; retries — no UI prompt. We simulate the settlement here to keep the flow visible.
+            <p className="text-[10px] font-mono text-zinc-500 text-center">
+              In production: <span className="text-cyan-400">x402-fetch</span> auto-signs &amp; retries. UI omitted for the buyer.
             </p>
           </div>
         )}
 
         {phase === 'paying' && (
-          <div className="border border-cyan-500/30 rounded-lg p-4 bg-cyan-500/[0.04] text-sm font-mono text-cyan-100 flex items-center gap-3">
-            <span className="size-2 rounded-full bg-cyan-400 animate-pulse" />
-            settling on base-sepolia…
+          <div className="border border-cyan-500/30 rounded-lg p-5 bg-cyan-500/[0.05] flex items-center gap-3 text-sm">
+            <span className="size-2.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="font-mono text-cyan-100">settling on base-sepolia…</span>
           </div>
         )}
 
         {phase === 'unlocked' && content && (
-          <div className="border border-emerald-500/30 rounded-lg p-4 bg-emerald-500/[0.04] space-y-2">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-300">200 OK · content unlocked</span>
+          <div className="border border-emerald-500/30 rounded-lg overflow-hidden">
+            <div className="px-4 py-2 bg-emerald-500/[0.08] border-b border-emerald-500/20 flex items-baseline justify-between">
+              <span className="text-xs font-mono text-emerald-200">← 200 OK · content unlocked</span>
               <span className="text-[10px] font-mono text-emerald-500/70">{content.paidVia}</span>
             </div>
-            <pre className="text-[11px] font-mono text-emerald-100/90 whitespace-pre-wrap leading-relaxed">{content.excerpt}…</pre>
+            <pre className="px-4 py-3 text-[11px] font-mono text-emerald-100/90 whitespace-pre-wrap leading-relaxed bg-emerald-500/[0.02]">
+              {content.excerpt}…
+            </pre>
           </div>
-        )}
-
-        {phase === 'error' && (
-          <p className="text-sm font-mono text-red-400">{error}</p>
         )}
       </div>
     </div>
   );
 }
 
-function Step({ label, active, done, sub }: { label: string; active: boolean; done: boolean; sub: string }) {
-  const cls = done
-    ? 'border-cyan-500/40 bg-cyan-500/[0.08] text-cyan-100'
-    : active
-      ? 'border-cyan-500/30 bg-cyan-500/[0.04] text-cyan-200'
-      : 'border-zinc-800 bg-zinc-900/40 text-zinc-500';
+function FlowCard({ n, icon, title, sub, active, done }: { n: string; icon: string; title: string; sub: string; active: boolean; done: boolean }) {
+  const state = done ? 'done' : active ? 'active' : 'idle';
+  const cls = {
+    done: 'border-cyan-500/50 bg-cyan-500/[0.08]',
+    active: 'border-cyan-500/30 bg-cyan-500/[0.04]',
+    idle: 'border-zinc-800 bg-zinc-900/40',
+  }[state];
+  const iconCls = {
+    done: 'bg-cyan-500 text-zinc-950',
+    active: 'bg-cyan-500/30 text-cyan-200',
+    idle: 'bg-zinc-800 text-zinc-500',
+  }[state];
+
   return (
-    <div className={`border rounded-lg p-3 ${cls}`}>
-      <div className="text-[10px] uppercase tracking-wider">{label}</div>
-      <div className="text-[10px] text-zinc-500 mt-1 leading-snug">{sub}</div>
+    <div className={`border rounded-lg p-4 transition-all ${cls}`}>
+      <div className="flex items-center gap-3 mb-2">
+        <div className={`size-7 rounded-md flex items-center justify-center text-sm font-mono font-semibold ${iconCls}`}>
+          {done ? '✓' : icon}
+        </div>
+        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">step {n}</span>
+      </div>
+      <div className={`text-sm font-medium ${done || active ? 'text-zinc-100' : 'text-zinc-400'}`}>{title}</div>
+      <div className="text-[11px] text-zinc-500 mt-0.5">{sub}</div>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[9px] uppercase tracking-wider text-zinc-500">{label}</div>
+      <div className="text-amber-200 truncate">{value}</div>
     </div>
   );
 }

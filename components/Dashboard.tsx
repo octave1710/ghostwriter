@@ -6,6 +6,9 @@ import { TracePanel } from './TracePanel';
 import { AIResponsePanel } from './AIResponsePanel';
 import { PublishedArticles } from './PublishedArticles';
 import { X402Panel } from './X402Panel';
+import { MonitoringPanel } from './MonitoringPanel';
+import { CompetitiveLeaderboard } from './CompetitiveLeaderboard';
+import { OptimizationsPanel } from './OptimizationsPanel';
 import type { RunResult } from '@/lib/agent/loop';
 
 const DD_SITE = process.env.NEXT_PUBLIC_DD_SITE ?? 'datadoghq.com';
@@ -42,6 +45,8 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  const competitors = competitorsText.split(',').map(c => c.trim()).filter(Boolean);
+
   async function refreshSeries(brandName: string) {
     try {
       const r = await fetch(`/api/narrative-control?brand=${encodeURIComponent(brandName)}`);
@@ -55,12 +60,12 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
     setResult(null);
     setPhase('monitoring');
 
-    // Timed visual progression matching actual ~8-12s run duration.
     const t0 = Date.now();
     const advance = (next: Phase, ms: number) =>
       setTimeout(() => {
-        const stillRunning = Date.now() - t0 < 30000;
-        if (stillRunning) setPhase(p => (p === 'done' || p === 'error') ? p : next);
+        if (Date.now() - t0 < 30000) {
+          setPhase(p => (p === 'done' || p === 'error') ? p : next);
+        }
       }, ms);
     advance('detecting', 1500);
     advance('publishing', 2800);
@@ -73,7 +78,7 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
         body: JSON.stringify({
           brand,
           queries: queriesText.split('\n').map(q => q.trim()).filter(Boolean),
-          competitors: competitorsText.split(',').map(c => c.trim()).filter(Boolean),
+          competitors,
         }),
       });
       const data = await res.json();
@@ -90,40 +95,42 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
   const running = phase !== 'idle' && phase !== 'done' && phase !== 'error';
   const hasRun = phase === 'done' || phase === 'error';
 
-  // For the progress bars: a bar is filled if we've reached its phase OR we're already done.
   const isBarFilled = (p: Phase) => {
     if (phase === 'done') return true;
     if (phase === 'idle' || phase === 'error') return false;
     return PHASE_ORDER.indexOf(phase) >= PHASE_ORDER.indexOf(p);
   };
 
+  const queriesArr = queriesText.split('\n').map(q => q.trim()).filter(Boolean);
+
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-50">
-      <div className="max-w-6xl mx-auto px-6 py-12 space-y-10">
-        {/* Header */}
-        <header className="space-y-3">
+      <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+
+        {/* ─── Header ─── */}
+        <header className="space-y-2">
           <div className="flex items-baseline gap-3">
-            <h1 className="text-5xl font-semibold tracking-tight">GhostWriter</h1>
+            <h1 className="text-4xl font-semibold tracking-tight">GhostWriter</h1>
             <span className="text-xs font-mono text-emerald-400/70">v0.1 · hackathon</span>
           </div>
-          <p className="text-zinc-400 text-lg max-w-3xl">
-            Autonomous GEO agent. <span className="text-zinc-200">Monitor</span> how AI engines describe your brand → <span className="text-zinc-200">detect</span> where you&apos;re absent → <span className="text-zinc-200">publish</span> grounded citeables that AI engines cite → <span className="text-zinc-200">measure</span> the lift. One trigger, full loop.
+          <p className="text-zinc-400 text-base max-w-3xl">
+            Autonomous GEO agent. One trigger: monitor AI search → detect citation gaps → publish grounded citeables → measure the lift → monetize via agent payments.
           </p>
         </header>
 
-        {/* Form */}
-        <section className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/40 space-y-4">
+        {/* ─── Form ─── */}
+        <section className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30 space-y-4">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm uppercase tracking-wide text-zinc-400">Configure run</h2>
+            <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-mono">Configure run</h2>
             <span className="text-[11px] font-mono text-zinc-500">
-              pre-loaded with Resend · edit any field to test your own brand
+              pre-loaded with Resend — edit any field for your own brand
             </span>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
-            <div className="space-y-4 w-full">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3 w-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label className="block space-y-1">
-                  <span className="text-xs uppercase tracking-wide text-zinc-500">Brand</span>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">Brand</span>
                   <input
                     value={brand}
                     onChange={e => setBrand(e.target.value)}
@@ -132,17 +139,18 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-xs uppercase tracking-wide text-zinc-500">Competitors (comma-separated)</span>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">Competitors</span>
                   <input
                     value={competitorsText}
                     onChange={e => setCompetitorsText(e.target.value)}
                     disabled={running}
+                    placeholder="comma, separated"
                     className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm focus:outline-none focus:border-emerald-500/50"
                   />
                 </label>
               </div>
               <label className="block space-y-1">
-                <span className="text-xs uppercase tracking-wide text-zinc-500">Queries (one per line)</span>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">Queries (one per line)</span>
                 <textarea
                   value={queriesText}
                   onChange={e => setQueriesText(e.target.value)}
@@ -155,16 +163,16 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
             <button
               onClick={deploy}
               disabled={running}
-              className="px-6 py-4 rounded-md bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-colors"
+              className="px-6 py-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-colors text-sm whitespace-nowrap"
             >
-              {running ? 'Running…' : 'Deploy Agent'}
+              {running ? 'Running…' : '▶ Deploy Agent'}
             </button>
           </div>
         </section>
 
-        {/* Status + Progress (visible during run AND after done) */}
+        {/* ─── Run status ─── */}
         {(running || hasRun) && (
-          <section className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/40 space-y-3">
+          <section className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/40 space-y-3">
             <div className="flex items-center gap-3">
               <span className={`size-2 rounded-full ${running ? 'bg-emerald-400 animate-pulse' : phase === 'error' ? 'bg-red-500' : 'bg-emerald-400'}`} />
               <span className="font-mono text-sm">{PHASE_LABEL[phase]}</span>
@@ -176,10 +184,7 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {PHASE_ORDER.map((p) => (
-                <div
-                  key={p}
-                  className={`h-1 rounded-full transition-colors ${isBarFilled(p) ? 'bg-emerald-500' : 'bg-zinc-800'}`}
-                />
+                <div key={p} className={`h-1 rounded-full transition-colors ${isBarFilled(p) ? 'bg-emerald-500' : 'bg-zinc-800'}`} />
               ))}
             </div>
             <div className="grid grid-cols-4 gap-1.5 text-[10px] uppercase tracking-wider font-mono text-zinc-600">
@@ -192,88 +197,124 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
           </section>
         )}
 
-        {/* Big-picture result + Chart */}
-        <section className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6">
-          <div className="space-y-4">
-            <ResultCard
-              label="Narrative control · this run"
-              value={result ? `${pct(result.narrativeControlAfter)}` : '—'}
-              valueSuffix={result ? null : null}
-              detail={
-                result
-                  ? `${result.gaps.length} of ${result.monitorResults.length} queries are now source-owned via cited.md (was ${pct(result.narrativeControlBefore)} cited from any source, 0% source-owned).`
-                  : 'Share of AI answers about your brand that come from YOUR own grounded sources, vs third-party blogs / competitor docs.'
-              }
-              accent="cyan"
-              large
-            />
-            <ResultCard
-              label="Gaps detected"
-              value={result ? result.gaps.length.toString() : '—'}
-              detail={
-                result
-                  ? result.gaps.length > 0
-                    ? result.gaps.map(g => <div key={g.query}>·  {g.query}</div>)
-                    : <span>No gaps — your brand is already cited everywhere.</span>
-                  : 'Queries where your brand is absent from AI answers'
-              }
-              accent="amber"
+        {/* ─── HERO impact ─── */}
+        {result && (
+          <HeroImpact result={result} brand={brand} />
+        )}
+
+        {/* ─── BEFORE: what AI engines were saying ─── */}
+        {result && (
+          <SectionHeader
+            n="01"
+            title="What AI engines were saying"
+            description="Live snapshot of citations across your monitored queries — before the agent acted."
+          />
+        )}
+        {result && (
+          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
+            <MonitoringPanel brand={brand} competitors={competitors} results={result.monitorResults} />
+            <CompetitiveLeaderboard
+              brand={brand}
+              competitors={competitors}
+              results={result.monitorResults}
+              publishedCount={result.published.length}
             />
           </div>
+        )}
 
-          <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/40 min-h-[360px] flex flex-col">
+        {/* ─── ACTION + IMPACT ─── */}
+        {result && (
+          <SectionHeader
+            n="02"
+            title="What the agent did about it"
+            description={`${result.gaps.length} citation gap${result.gaps.length === 1 ? '' : 's'} detected → ${result.published.length} grounded citeable${result.published.length === 1 ? '' : 's'} published to cited.md.`}
+          />
+        )}
+
+        {result && result.published.length > 0 && (
+          <PublishedArticles articles={result.published} />
+        )}
+
+        {result && (
+          <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/40">
             <div className="flex items-baseline justify-between mb-2">
-              <h2 className="text-sm uppercase tracking-wide text-zinc-300">Narrative control · over time</h2>
-              <span className="text-xs text-zinc-600 font-mono">brand={brand}</span>
+              <h3 className="text-xs uppercase tracking-wider font-mono text-zinc-400">Narrative control · trend</h3>
+              <span className="text-[11px] text-zinc-600 font-mono">brand={brand}</span>
             </div>
-            <p className="text-xs text-zinc-500 mb-4">
-              % of monitored queries where your brand is sourced from your own grounded citeable. 0% = AI engines cite competitors and blogs; 100% = AI engines cite your own ground truth.
+            <p className="text-xs text-zinc-500 mb-3">
+              % of monitored queries source-owned via cited.md, across all runs. Flat at 0% before the agent shipped; vertical spike after.
             </p>
-            <div className="flex-1 min-h-[260px]">
+            <div className="h-[260px]">
               <NarrativeChart series={series} />
             </div>
           </div>
-        </section>
-
-        {/* AI engine impact preview — the wow moment */}
-        <section>
-          <AIResponsePanel sim={result?.aiResponseSimulation ?? null} />
-        </section>
-
-        {/* Published citeables */}
-        {result && result.published.length > 0 && (
-          <section>
-            <PublishedArticles articles={result.published} />
-          </section>
         )}
 
-        {/* x402 agent payment rail */}
-        {result && result.published.length > 0 && (
-          <section>
-            <X402Panel articles={result.published} />
-          </section>
-        )}
-
-        {/* Datadog trace panel */}
-        <section>
-          <TracePanel
-            steps={result?.trace ?? []}
-            runId={result?.runId}
-            durationMs={result?.durationMs}
-            ddSite={DD_SITE}
-            mlApp={DD_ML_APP}
+        {result?.aiResponseSimulation && (
+          <SectionHeader
+            n="03"
+            title="How AI engines now answer"
+            description="Same query, simulated through an AI engine — before vs after your citeable hits the web."
           />
-        </section>
+        )}
 
-        {/* Footer */}
-        <footer className="text-xs text-zinc-600 font-mono space-y-1 pt-8 border-t border-zinc-900">
+        {result && (
+          <AIResponsePanel sim={result.aiResponseSimulation} />
+        )}
+
+        {/* ─── REVENUE ─── */}
+        {result && result.published.length > 0 && (
+          <>
+            <SectionHeader
+              n="04"
+              title="Monetize the source"
+              description="Other AI agents pay USDC to read your verified citeables. Real x402 protocol, on-chain settlement."
+            />
+            <X402Panel articles={result.published} />
+          </>
+        )}
+
+        {/* ─── NEXT STEPS ─── */}
+        {result && (
+          <>
+            <SectionHeader
+              n="05"
+              title="Next moves"
+              description="Beyond publishing — what else compounds AI search visibility."
+            />
+            <OptimizationsPanel result={result} brand={brand} competitors={competitors} />
+          </>
+        )}
+
+        {/* ─── Trace ─── */}
+        {result && (
+          <details className="group">
+            <summary className="cursor-pointer text-xs uppercase tracking-wider font-mono text-zinc-500 hover:text-zinc-300 select-none flex items-center gap-2 py-3">
+              <span className="text-zinc-700 group-open:rotate-90 transition-transform inline-block">▶</span>
+              Datadog LLM Observability trace · {result.trace.length} spans · {(result.durationMs / 1000).toFixed(1)}s
+            </summary>
+            <div className="mt-3">
+              <TracePanel
+                steps={result.trace}
+                runId={result.runId}
+                durationMs={result.durationMs}
+                ddSite={DD_SITE}
+                mlApp={DD_ML_APP}
+              />
+            </div>
+          </details>
+        )}
+
+        {/* ─── Footer ─── */}
+        <footer className="text-xs text-zinc-600 font-mono space-y-1 pt-6 border-t border-zinc-900">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <span>Sponsors wired:</span>
+            <span>6 sponsors wired:</span>
             <span className="text-zinc-400">Nimble</span>·<span className="text-zinc-400">Senso</span>·<span className="text-zinc-400">ClickHouse</span>·<span className="text-zinc-400">Datadog</span>·<span className="text-zinc-400">OpenAI</span>·<span className="text-zinc-400">x402</span>
           </div>
           <div>
             <a href="/api/health" className="hover:text-zinc-400">/api/health</a> ·{' '}
             <a href={`/api/narrative-control?brand=${brand}`} className="hover:text-zinc-400">/api/narrative-control</a> ·{' '}
+            <a href={`/api/query-content?id=${result?.published[0]?.contentId ?? 'x'}`} className="hover:text-zinc-400">/api/query-content (x402)</a> ·{' '}
             <a href="https://github.com/octave1710/ghostwriter" target="_blank" rel="noreferrer" className="hover:text-zinc-400">source ↗</a>
           </div>
         </footer>
@@ -282,43 +323,52 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
   );
 }
 
-function pct(v: number) {
-  return `${Math.round(v * 100)}%`;
+function SectionHeader({ n, title, description }: { n: string; title: string; description: string }) {
+  return (
+    <div className="flex items-baseline gap-4 pt-4">
+      <span className="text-[10px] font-mono text-emerald-400/60 tracking-widest">{n}</span>
+      <div className="flex-1 border-t border-zinc-800 pt-3 -mt-3">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <p className="text-sm text-zinc-500 mt-0.5">{description}</p>
+      </div>
+    </div>
+  );
 }
 
-function ResultCard({
-  label,
-  value,
-  valueSuffix,
-  detail,
-  accent,
-  large = false,
-}: {
-  label: string;
-  value: string;
-  valueSuffix?: React.ReactNode;
-  detail: React.ReactNode;
-  accent: 'amber' | 'emerald' | 'cyan';
-  large?: boolean;
-}) {
-  const accentClass = {
-    amber: 'border-amber-500/30 bg-amber-500/[0.04]',
-    emerald: 'border-emerald-500/30 bg-emerald-500/[0.04]',
-    cyan: 'border-cyan-500/30 bg-cyan-500/[0.04]',
-  }[accent];
-  const valueClass = {
-    amber: 'text-amber-300',
-    emerald: 'text-emerald-300',
-    cyan: 'text-cyan-300',
-  }[accent];
+function HeroImpact({ result, brand }: { result: RunResult; brand: string }) {
+  const total = result.monitorResults.length;
+  const citedBefore = result.monitorResults.filter(m => m.brandCited).length;
+  const ownedAfter = result.gaps.length;
+  const projectedAfter = Math.min(total, citedBefore + ownedAfter);
 
   return (
-    <div className={`border rounded-xl p-5 ${accentClass}`}>
-      <div className="text-xs uppercase tracking-wide text-zinc-500 mb-1">{label}</div>
-      <div className={`${large ? 'text-6xl' : 'text-4xl'} font-mono font-light tabular-nums ${valueClass} flex items-baseline gap-2`}>
-        {value}{valueSuffix}
+    <section className="border border-emerald-500/20 rounded-xl p-6 bg-gradient-to-br from-emerald-500/[0.06] via-zinc-900/40 to-zinc-900/40 overflow-hidden relative">
+      <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-emerald-500/[0.04] to-transparent pointer-events-none" />
+      <div className="relative grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-6 items-center">
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">{brand} · before</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-5xl font-mono font-light text-zinc-400 tabular-nums">{citedBefore}</span>
+            <span className="text-2xl font-mono text-zinc-600">/ {total}</span>
+            <span className="text-xs text-zinc-500 ml-2">queries cited</span>
+          </div>
+          <div className="text-xs font-mono text-red-400/80 mt-1">0 source-owned</div>
+        </div>
+
+        <div className="text-3xl text-emerald-400/70 font-mono px-4 hidden md:block">→</div>
+
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400/70 mb-1">{brand} · after</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-6xl font-mono font-light text-emerald-300 tabular-nums">{projectedAfter}</span>
+            <span className="text-2xl font-mono text-emerald-400/40">/ {total}</span>
+            <span className="text-xs text-emerald-400/70 ml-2">queries cited (projected)</span>
+          </div>
+          <div className="text-xs font-mono text-emerald-300 mt-1">
+            {ownedAfter} now source-owned via cited.md
+          </div>
+        </div>
       </div>
-      <div className="text-xs text-zinc-400 mt-2 space-y-0.5 font-mono leading-relaxed">{detail}</div>
-    </div>
+    </section>
   );
 }
