@@ -44,7 +44,7 @@ export async function monitor(
     }
 
     const data = (await res.json()) as { results: NimbleSearchResult[] };
-    const top = (data.results ?? []).slice(0, 5);
+    const top = (data.results ?? []).slice(0, 10);
 
     const brandRe = new RegExp(`\\b${escapeRegex(brand)}\\b`, 'i');
     const brandCited = top.some(r =>
