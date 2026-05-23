@@ -11,8 +11,9 @@ export type SeriesPoint = {
 export function NarrativeChart({ series }: { series: SeriesPoint[] }) {
   if (!series.length) {
     return (
-      <div className="flex items-center justify-center h-full text-zinc-600 font-mono text-sm">
-        No data yet. Run the agent or seed the table.
+      <div className="flex flex-col items-center justify-center h-full text-zinc-600 font-mono text-sm gap-2">
+        <span>No data yet</span>
+        <span className="text-[10px] text-zinc-700">click Deploy Agent to populate</span>
       </div>
     );
   }

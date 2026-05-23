@@ -142,7 +142,26 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
             <div className="flex items-center gap-3">
               <span className={`size-2 rounded-full ${running ? 'bg-emerald-400 animate-pulse' : phase === 'error' ? 'bg-red-500' : 'bg-zinc-600'}`} />
               <span className="font-mono text-sm">{PHASE_LABEL[phase]}</span>
+              {result && phase === 'done' && (
+                <span className="text-xs font-mono text-zinc-500 ml-auto">
+                  finished in {(result.durationMs / 1000).toFixed(1)}s · {result.trace.length} spans
+                </span>
+              )}
             </div>
+            {running && (
+              <div className="flex gap-1.5">
+                {(['monitoring', 'detecting', 'publishing', 'measuring'] as const).map((p) => {
+                  const order: Phase[] = ['monitoring', 'detecting', 'publishing', 'measuring'];
+                  const reached = order.indexOf(phase) >= order.indexOf(p);
+                  return (
+                    <div
+                      key={p}
+                      className={`flex-1 h-1 rounded-full transition-colors ${reached ? 'bg-emerald-500' : 'bg-zinc-800'}`}
+                    />
+                  );
+                })}
+              </div>
+            )}
             {error && <p className="text-sm text-red-400 font-mono">{error}</p>}
           </section>
         )}
@@ -162,10 +181,24 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
               value={result ? result.published.length.toString() : '—'}
               detail={
                 result?.published.length
-                  ? result.published.map((p, i) => (
-                      <a key={i} href={p.url} target="_blank" rel="noreferrer" className="block underline decoration-emerald-500/40 hover:decoration-emerald-300 truncate">{p.url}</a>
-                    ))
-                  : 'Live cited.md URLs will appear here'
+                  ? (
+                    <div className="space-y-1.5 mt-1">
+                      {result.published.map((p, i) => (
+                        <a
+                          key={i}
+                          href={p.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-2 px-2.5 py-1.5 -mx-2.5 rounded border border-emerald-500/20 bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] hover:border-emerald-500/40 transition-colors group"
+                        >
+                          <span className="text-[10px] uppercase tracking-wider text-emerald-400/70 shrink-0">live</span>
+                          <span className="truncate text-emerald-200 group-hover:text-emerald-100 text-[11px]">{p.url.replace('https://', '')}</span>
+                          <span className="text-emerald-400/50 shrink-0">↗</span>
+                        </a>
+                      ))}
+                    </div>
+                  )
+                  : <span>Live cited.md URLs will appear here</span>
               }
               accent="emerald"
             />
@@ -202,10 +235,14 @@ export function Dashboard({ defaultBrand, defaultQueries, defaultCompetitors, in
 
         {/* Footer */}
         <footer className="text-xs text-zinc-600 font-mono space-y-1 pt-8 border-t border-zinc-900">
-          <div>5 sponsor tools wired: Nimble · Senso · ClickHouse · Datadog · OpenAI · (x402 phase 4)</div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <span>Sponsors wired:</span>
+            <span className="text-zinc-400">Nimble</span>·<span className="text-zinc-400">Senso</span>·<span className="text-zinc-400">ClickHouse</span>·<span className="text-zinc-400">Datadog</span>·<span className="text-zinc-400">OpenAI</span>
+          </div>
           <div>
             <a href="/api/health" className="hover:text-zinc-400">/api/health</a> ·{' '}
-            <a href={`/api/narrative-control?brand=${brand}`} className="hover:text-zinc-400">/api/narrative-control</a>
+            <a href={`/api/narrative-control?brand=${brand}`} className="hover:text-zinc-400">/api/narrative-control</a> ·{' '}
+            <a href="https://github.com/octave1710/ghostwriter" target="_blank" rel="noreferrer" className="hover:text-zinc-400">source ↗</a>
           </div>
         </footer>
       </div>

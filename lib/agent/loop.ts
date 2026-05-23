@@ -100,10 +100,15 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
       run_id: runId,
     }));
 
-    await step(trace, 'clickhouse.insert', 'tool', async () => {
-      await insertRows(rows);
-      return { rows: rows.length };
-    }, m => m);
+    try {
+      await step(trace, 'clickhouse.insert', 'tool', async () => {
+        await insertRows(rows);
+        return { rows: rows.length };
+      }, m => m);
+    } catch (err) {
+      console.warn('[ch] insert failed, demo continues:', (err as Error).message);
+      // Non-fatal: the dashboard will still render the run from RunResult.
+    }
 
     const narrativeControlAfter = rows.length > 0 ? rows.filter(r => r.source_owned).length / rows.length : 0;
 
